@@ -23,23 +23,28 @@ Both are compared against ground truth from [Wiesmayr et al. (2023)](https://doi
 ## Project Structure
 
 ```
-├── exploration/                    # Video/Screenshot assessment
+├── exploration/                    # Passive analysis: video + screenshot assessment
 │   ├── prompts.py                  # 3 prompt levels (blind, CD-guided, task-specific)
-│   ├── gemini_video_assess.py      # Gemini video assessment script
-│   ├── assess_screenshots.py       # Multi-model screenshot assessment
-│   └── outputs/                    # Model outputs (assessments)
-│       ├── gemini_video/           # Gemini video assessments
-│       └── screenshots/            # Screenshot assessments
+│   ├── gemini_video_assess.py      # Gemini video assessment (task_demo / intro videos)
+│   ├── assess_screenshots.py       # Multi-model screenshot (frame) assessment
+│   ├── assess_agent_video.py       # AI-on-AI: Gemini assesses an agent's screen recording
+│   ├── assess_agent_video_with_thinking.py  # AI-on-AI, recording + agent reasoning trace
+│   ├── assess_new_videos.py        # Newer-version video assessment (see note under Setup)
+│   ├── frames/                     # Extracted frames (gitignored; from Drive or ffmpeg)
+│   └── outputs/                    # Outputs: gemini_video/, screenshots/, agent_video/, new_version/
 │
-└── agent_interaction/              # Agent-based UI interaction
-    ├── Dockerfile                  # Ubuntu + Java + 4diac IDE + VNC
-    ├── docker-compose.yml          # Container config
-    ├── start.sh                    # Entrypoint script
-    ├── tasks.py                    # 4 task definitions from the paper
-    ├── claude_computer_use.py      # Claude Computer Use agent
-    ├── EXPERIMENTS.md              # Experiment documentation
-    ├── RESEARCH_UI_AGENTS.md       # Survey of 12+ UI agents
-    └── outputs/                    # Agent results + step screenshots
+├── agent_interaction/              # Interactive assessment: computer-use agent
+│   ├── Dockerfile                  # Ubuntu + Java + 4diac IDE + VNC
+│   ├── docker-compose.yml          # Container config (1024x768)
+│   ├── start.sh                    # Entrypoint script
+│   ├── tasks.py                    # 4 task definitions from the paper + blinky_expert
+│   ├── claude_computer_use.py      # Claude Computer Use agent loop
+│   ├── EXPERIMENTS.md              # Experiment documentation
+│   ├── RESEARCH_UI_AGENTS.md       # Survey of 12+ UI agents
+│   ├── RUN_BLINKY_EXPERIMENT.md    # How to run the Blinky tutorial build
+│   └── outputs/                    # Agent results + per-step screenshots
+│
+└── videos/                         # Video inputs (gitignored; from YouTube + Google Drive)
 ```
 
 ---
@@ -74,6 +79,7 @@ Create `exploration/.env`:
 
 ```env
 GOOGLE_API_KEY=<your-google-gemini-api-key>
+GOOGLE_API_KEY_NEW=<a-second-gemini-key>
 OPENAI_API_KEY=<your-openai-api-key>
 ANTHROPIC_API_KEY=<your-anthropic-api-key>
 ```
@@ -83,7 +89,16 @@ Get keys from:
 - OpenAI: https://platform.openai.com/api-keys
 - Anthropic: https://console.anthropic.com/settings/keys
 
-### Step 3: Download Videos
+`GOOGLE_API_KEY_NEW` is a second Gemini key used only by the agent-video scripts
+(`assess_agent_video.py`, `assess_agent_video_with_thinking.py`); it can be the same value as
+`GOOGLE_API_KEY`. The `.env` file must live at `exploration/.env` and is gitignored — never commit it.
+
+### Step 3: Videos and frames
+
+All video inputs live in a `videos/` folder at the repo root; extracted frames live under
+`exploration/frames/`. Both are gitignored (too large for git), so fetch them once.
+
+**a) The three demo videos come from YouTube** (via yt-dlp):
 
 ```powershell
 mkdir videos
@@ -91,6 +106,29 @@ yt-dlp -o "videos/task_demo.%(ext)s" "https://youtu.be/xishphcgYmc"
 yt-dlp -o "videos/intro_v1.%(ext)s" "https://youtu.be/K9iItQBC-ac"
 yt-dlp -o "videos/intro_v2.%(ext)s" "https://youtu.be/by02Xu2yrPE"
 ```
+
+**b) The agent recordings and user-session videos come from Google Drive:**
+
+Download folder: **https://drive.google.com/drive/folders/1aPE9RjXhAXFG0XiRws4NSEL2VcWAzV2-?usp=sharing**
+
+Place these into `videos/` with their **exact filenames** (the spaces matter — the scripts reference them literally):
+
+| File | Used by |
+|------|---------|
+| `agent 121 step sonnet 4-6.mp4` | `assess_agent_video.py` (default input) |
+| `blinky_expert_80steps_2026-04-16.mkv` | `assess_agent_video_with_thinking.py` |
+| `blinky_expert_38steps_failed_2026-04-16.mkv` | reference (a failed agent run) |
+| `blinky_expert_30steps_test_2026-04-16.mkv` | reference (a short test run) |
+| `user 5-20.mkv`, `user 11-44.mkv` | reference user-session recordings |
+
+**c) Frames** (needed for the screenshot experiments) are in the same Drive folder under `frames/`.
+Download it so you end up with `exploration/frames/td/` and `exploration/frames/td_3s/`. If you would
+rather regenerate them, use the two ffmpeg commands in the run section below — they derive only from
+`task_demo.mkv` (`td` = 1 frame every 10 s, `td_3s` = 1 frame every 3 s).
+
+> **Note:** `assess_new_videos.py` and the `new_a` / `new_b` keys in `gemini_video_assess.py` refer
+> to two newer-version recordings (`2026-03-19 …`) that are **not included** in the Drive folder, so
+> that specific comparison is not reproducible from this repo as-is. Every other experiment is.
 
 ### Step 4: Download Papers (not in repo)
 
@@ -110,7 +148,8 @@ python gemini_video_assess.py td blind
 python gemini_video_assess.py td cd_guided
 python gemini_video_assess.py td task_specific
 
-# Extract frames for screenshot assessment
+# Extract frames for the screenshot assessment
+# (skip this if you already downloaded the frames/ folder from Google Drive)
 mkdir -p frames\td frames\td_3s
 ffmpeg -i ..\videos\task_demo.mkv -vf "fps=1/10" -q:v 2 frames\td\frame_%04d.jpg
 ffmpeg -i ..\videos\task_demo.mkv -vf "fps=1/3" -q:v 2 frames\td_3s\frame_%04d.jpg
@@ -120,6 +159,11 @@ python assess_screenshots.py blind all 6frames
 python assess_screenshots.py cd_guided all 6frames
 python assess_screenshots.py blind claude 20frames
 python assess_screenshots.py cd_guided claude 20frames
+
+# AI-on-AI: Gemini assesses an agent's own screen recording
+# (needs GOOGLE_API_KEY_NEW and the agent videos from Google Drive)
+python assess_agent_video.py
+python assess_agent_video_with_thinking.py
 ```
 
 ---
@@ -185,7 +229,12 @@ docker compose down
 
 | Document | Description |
 |----------|-------------|
+| [REPRODUCIBILITY.md](REPRODUCIBILITY.md) | Pre-flight checklist for replicating every experiment |
+| [FULL_SESSION_LOG.md](FULL_SESSION_LOG.md) | Step-by-step replication log (macOS), with commands and gotchas |
+| [SESSION_LOG_WINDOWS.md](SESSION_LOG_WINDOWS.md) | Step-by-step replication log (Windows, native x86_64) |
+| [progress.md](progress.md) | Project overview: ground-truth issues, experiments, model comparison, tips |
 | [agent_interaction/EXPERIMENTS.md](agent_interaction/EXPERIMENTS.md) | Agent interaction experiment details + screenshots |
+| [agent_interaction/RUN_BLINKY_EXPERIMENT.md](agent_interaction/RUN_BLINKY_EXPERIMENT.md) | How to run the Blinky tutorial-build experiment |
 | [agent_interaction/RESEARCH_UI_AGENTS.md](agent_interaction/RESEARCH_UI_AGENTS.md) | Survey of 12+ UI interaction agents |
 
 ---

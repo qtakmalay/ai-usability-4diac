@@ -7,8 +7,9 @@ videos/*.mkv
 videos/*.webm
 videos/*.mp4
 
-# Extracted frames (regenerate with ffmpeg)
+# Extracted frames (regenerate with ffmpeg, or download from Google Drive)
 exploration/frames/
+frames/
 
 # Python
 __pycache__/
@@ -43,3 +44,15 @@ agent_interaction/screen_*.png
 *.m4a
 *.mp3
 *.docx
+
+# Not part of the public replication repo (kept only in the private working copy):
+# meeting notes/recordings, the write-up, the notes vault, and third-party papers.
+papers/
+report/
+meeting_*/
+obsidian/
+.obsidian/
+*.canvas
+dialog.txt
+SUMMARY_FOR_MEETING.*
+OBSIDIAN_README.md
